@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<title>Wild Awakening</title>
+<style>
+:root{--bg:#0b1a12;--fg:#fff;--panel:rgba(8,20,14,.55);--accent:#7dffb0}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#050d09;--panel:rgba(0,0,0,.55)}}
+:root[data-theme="dark"]{--bg:#050d09;--panel:rgba(0,0,0,.55)}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none}
+html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;touch-action:none}
+canvas{position:fixed;inset:0;width:100%;height:100%;display:block}
+.lid{position:fixed;left:0;right:0;height:50%;background:#000;transition:transform 1.4s ease;z-index:5;pointer-events:none}
+.top{top:0}.bot{bottom:0}
+#hud{position:fixed;inset:0;z-index:4;pointer-events:none;padding:env(safe-area-inset-top,0px) env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px)}
+#mis{position:absolute;top:12px;left:12px;max-width:62%;background:var(--panel);padding:10px 14px;border-radius:14px;font-size:14px;line-height:1.4;backdrop-filter:blur(6px)}
+#mis b{color:var(--accent);display:block;font-size:13px;letter-spacing:.04em;text-transform:uppercase}
+#nav{display:flex;align-items:center;gap:8px;margin-top:4px;font-size:13px;opacity:.9}
+#arrow{display:inline-block;font-size:18px;color:var(--accent);transition:transform .1s}
+#toast{position:absolute;top:22%;left:50%;transform:translateX(-50%);background:var(--panel);padding:12px 20px;border-radius:16px;font-size:16px;text-align:center;opacity:0;transition:opacity .6s;max-width:80%}
+#base{position:fixed;width:110px;height:110px;margin:-55px 0 0 -55px;border-radius:50%;border:2px solid rgba(255,255,255,.35);background:rgba(255,255,255,.08);display:none;z-index:4}
+#knob{position:absolute;left:35px;top:35px;width:40px;height:40px;border-radius:50%;background:rgba(255,255,255,.55)}
+#jump{position:fixed;right:calc(22px + env(safe-area-inset-right,0px));bottom:calc(26px + env(safe-area-inset-bottom,0px));width:76px;height:76px;border-radius:50%;border:2px solid rgba(255,255,255,.5);background:rgba(255,255,255,.14);color:#fff;font-weight:700;font-size:13px;z-index:6;touch-action:none}
+#title{position:fixed;inset:0;z-index:9;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;text-align:center;padding:24px;background:radial-gradient(circle at 50% 40%,#1d4a33,var(--bg))}
+#title h1{margin:0;font-size:clamp(30px,8vw,56px);letter-spacing:.06em}
+#title p{margin:0;opacity:.8;max-width:420px;font-size:15px;line-height:1.5}
+#go{padding:14px 30px;font-size:17px;border:0;border-radius:30px;background:var(--accent);color:#06210f;font-weight:700}
+#rot{position:fixed;inset:0;z-index:20;display:none;flex-direction:column;align-items:center;justify-content:center;gap:12px;background:var(--bg);text-align:center;font-size:18px;padding:24px}#rot span{font-size:56px}@media (orientation:portrait){#rot{display:flex}}
+</style></head><body>
+<div id="rot"><span>📱↻</span>Please rotate your phone<br>to landscape</div>
+<div id="title"><h1>WILD AWAKENING</h1>
+<p>You wake up alone in the middle of nowhere. Explore the wilds, find the lost crystals and discover the way home.</p>
+<p style="font-size:13px">Left side: move · Right side: look · JUMP button<br>PC: WASD, drag mouse, Space</p>
+<button id="go">Tap to open your eyes</button></div>
+<div class="lid top"></div><div class="lid bot"></div>
+<div id="hud"><div id="mis"><b id="mt"></b><div id="ms"></div><div id="nav"><span id="arrow">▲</span><span id="dist"></span></div></div><div id="toast"></div></div>
+<div id="base"><div id="knob"></div></div>
+<button id="jump">JUMP</button>
+<script src="three.min.js"></script>
+<script>
+(function(){
+const $=id=>document.getElementById(id);
+let s=7;const rnd=()=>{s|=0;s=s+0x6D2B79F5|0;let t=Math.imul(s^s>>>15,1|s);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296};
+const HX=90,HZ=-80;
+const H=(x,z)=>{const d=Math.hypot(x,z);let h=Math.sin(x*.035)*Math.cos(z*.03)*6+Math.sin(x*.09+z*.07)*2+Math.cos(z*.13-x*.05);h*=Math.min(1,d/25+.2);h+=18*Math.exp(-((x-HX)**2+(z-HZ)**2)/900);return h-1};
+const WATER=-2.6;
+const dpr=window.devicePixelRatio||1;
+const renderer=new THREE.WebGLRenderer({antialias:dpr<2,powerPreference:'high-performance'});
+let ratio=Math.min(dpr,1.75),maxRatio=ratio;
+renderer.setPixelRatio(ratio);renderer.setSize(innerWidth,innerHeight);
+document.body.prepend(renderer.domElement);
+const scene=new THREE.Scene();scene.background=new THREE.Color(0x9fd3f0);scene.fog=new THREE.Fog(0xbfe3f5,45,210);
+const cam=new THREE.PerspectiveCamera(70,innerWidth/innerHeight,.1,320);cam.rotation.order='YXZ';
+scene.add(new THREE.HemisphereLight(0xdff2ff,0x3b5a2a,.95));
+const sun=new THREE.DirectionalLight(0xfff1cf,1.1);sun.position.set(80,120,40);scene.add(sun);
+const sunBall=new THREE.Mesh(new THREE.SphereGeometry(9,12,8),new THREE.MeshBasicMaterial({color:0xfff6c8,fog:false}));sunBall.position.set(150,200,70);scene.add(sunBall);
+
+// terrain
+const S=400,N=110,g=new THREE.PlaneGeometry(S,S,N,N);g.rotateX(-Math.PI/2);
+const p=g.attributes.position,col=new Float32Array(p.count*3),c=new THREE.Color();
+for(let i=0;i<p.count;i++){const x=p.getX(i),z=p.getZ(i),y=H(x,z);p.setY(i,y);
+ if(y<-2)c.set(0xc9b27a);else if(y>15)c.set(0x8d8d85);else c.setHSL(.27+(rnd()-.5)*.04,.45,.27+y*.006+(rnd()-.5)*.05);
+ col[i*3]=c.r;col[i*3+1]=c.g;col[i*3+2]=c.b}
+g.setAttribute('color',new THREE.BufferAttribute(col,3));g.computeVertexNormals();
+scene.add(new THREE.Mesh(g,new THREE.MeshLambertMaterial({vertexColors:true,flatShading:true})));
+const water=new THREE.Mesh(new THREE.PlaneGeometry(S,S).rotateX(-Math.PI/2),new THREE.MeshLambertMaterial({color:0x3a9ad9,transparent:true,opacity:.75}));
+water.position.y=WATER;scene.add(water);
+
+const land=(a,b)=>{for(;;){const x=(rnd()-.5)*370,z=(rnd()-.5)*370,d=Math.hypot(x,z);if(d>=a&&d<=b&&H(x,z)>-1.8)return[x,z]}};
+const D=new THREE.Object3D();
+// trees
+const TN=450,trees=[];
+const fol=new THREE.InstancedMesh(new THREE.ConeGeometry(2.2,6,6).translate(0,4.5,0),new THREE.MeshLambertMaterial({flatShading:true}),TN);
+const trk=new THREE.InstancedMesh(new THREE.CylinderGeometry(.3,.4,3,5).translate(0,1.5,0),new THREE.MeshLambertMaterial({color:0x6b4a2b,flatShading:true}),TN);
+for(let i=0;i<TN;i++){const[x,z]=land(10,190),sc=.8+rnd()*1.1;trees.push([x,z,.7*sc]);
+ D.position.set(x,H(x,z)-.2,z);D.scale.setScalar(sc);D.rotation.y=rnd()*6;D.updateMatrix();fol.setMatrixAt(i,D.matrix);trk.setMatrixAt(i,D.matrix);
+ fol.setColorAt(i,c.setHSL(.27+rnd()*.08,.5,.17+rnd()*.12))}
+scene.add(fol,trk);
+// rocks
+const RN=110,rocks=new THREE.InstancedMesh(new THREE.DodecahedronGeometry(1,0),new THREE.MeshLambertMaterial({color:0x8a8a84,flatShading:true}),RN);
+for(let i=0;i<RN;i++){const[x,z]=land(8,190),sc=.5+rnd()*1.8;trees.push([x,z,sc*.9]);D.position.set(x,H(x,z)+sc*.3,z);D.scale.set(sc,sc*.7,sc);D.rotation.set(rnd(),rnd()*6,0);D.updateMatrix();rocks.setMatrixAt(i,D.matrix)}
+scene.add(rocks);
+// flowers
+const FN=260,fl=new THREE.InstancedMesh(new THREE.IcosahedronGeometry(.2,0),new THREE.MeshLambertMaterial({flatShading:true}),FN),fc=[0xff6fa5,0xffe05a,0xffffff,0xb48cff];
+for(let i=0;i<FN;i++){const[x,z]=land(3,170);D.position.set(x,H(x,z)+.2,z);D.scale.setScalar(.8+rnd());D.rotation.set(0,0,0);D.updateMatrix();fl.setMatrixAt(i,D.matrix);fl.setColorAt(i,c.set(fc[i%4]))}
+scene.add(fl);
+// clouds
+const clouds=[],cm=new THREE.MeshBasicMaterial({color:0xffffff,fog:false});
+for(let i=0;i<12;i++){const gr=new THREE.Group();for(let j=0;j<3;j++){const m=new THREE.Mesh(new THREE.IcosahedronGeometry(7+rnd()*5,0),cm);m.position.set(j*9-9,rnd()*3,rnd()*5);m.scale.y=.55;gr.add(m)}
+ gr.position.set((rnd()-.5)*500,70+rnd()*30,(rnd()-.5)*500);scene.add(gr);clouds.push(gr)}
+
+// objectives
+const beam=(h,r,color,op)=>new THREE.Mesh(new THREE.CylinderGeometry(r,r,h,8,1,true),new THREE.MeshBasicMaterial({color,transparent:true,opacity:op,blending:THREE.AdditiveBlending,depthWrite:false,fog:false}));
+const crystals=[];
+for(let i=0;i<5;i++){const[x,z]=land(30,150),gr=new THREE.Group(),m=new THREE.Mesh(new THREE.OctahedronGeometry(.6),new THREE.MeshBasicMaterial({color:0x5ff3ff,fog:false}));m.scale.y=1.6;
+ const b=beam(30,.35,0x5ff3ff,.28);b.position.y=15;gr.add(m,b);gr.position.set(x,H(x,z)+1.4,z);scene.add(gr);crystals.push({g:gr,m,x,z,got:false})}
+const bg=new THREE.Group(),tower=new THREE.Mesh(new THREE.CylinderGeometry(1.2,2,6,6),new THREE.MeshLambertMaterial({color:0x9a9a92,flatShading:true})),
+ orb=new THREE.Mesh(new THREE.IcosahedronGeometry(1,0),new THREE.MeshBasicMaterial({color:0x777777,fog:false})),bb=beam(90,.7,0xffd24a,.0);
+tower.position.y=3;orb.position.y=7.5;bb.position.y=45;bg.add(tower,orb,bb);bg.position.set(HX,H(HX,HZ)-1,HZ);scene.add(bg);
+
+// state
+let px=0,pz=0,py=H(0,0),vy=0,yaw=Math.PI,pitch=1.1,started=false,introT=0,ctrl=false,mission=0,got=0,jumpReq=false,bobT=0;
+const keys={},mv={x:0,y:0};
+const toast=(t,ms=4000)=>{const e=$('toast');e.textContent=t;e.style.opacity=1;clearTimeout(toast.t);toast.t=setTimeout(()=>e.style.opacity=0,ms)};
+const hud=()=>{if(mission===0){$('mt').textContent='Mission 1';$('ms').textContent='Find the glowing crystals ('+got+'/5)'}
+ else if(mission===1){$('mt').textContent='Mission 2';$('ms').textContent='Climb the hill and reach the golden beacon'}
+ else{$('mt').textContent='Complete!';$('ms').textContent='You found the way home. Thanks for playing!';$('nav').style.display='none'}};
+hud();
+
+// input
+const base=$('base'),knob=$('knob');let jid=null,jo,lid=null,lp;
+addEventListener('touchstart',e=>{e.preventDefault();for(const t of e.changedTouches){
+ if(t.clientX<innerWidth/2&&jid===null){jid=t.identifier;jo={x:t.clientX,y:t.clientY};base.style.cssText+='display:block;left:'+t.clientX+'px;top:'+t.clientY+'px'}
+ else if(t.clientX>=innerWidth/2&&lid===null){lid=t.identifier;lp={x:t.clientX,y:t.clientY}}}},{passive:false});
+addEventListener('touchmove',e=>{e.preventDefault();for(const t of e.changedTouches){
+ if(t.identifier===jid){let dx=t.clientX-jo.x,dy=t.clientY-jo.y;const m=Math.hypot(dx,dy),mx=50;if(m>mx){dx*=mx/m;dy*=mx/m}
+  mv.x=dx/mx;mv.y=dy/mx;knob.style.transform='translate('+dx+'px,'+dy+'px)'}
+ else if(t.identifier===lid){yaw-=(t.clientX-lp.x)*.005;pitch-=(t.clientY-lp.y)*.005;pitch=Math.max(-1.3,Math.min(1.3,pitch));lp={x:t.clientX,y:t.clientY}}}},{passive:false});
+const end=e=>{for(const t of e.changedTouches){if(t.identifier===jid){jid=null;mv.x=mv.y=0;base.style.display='none';knob.style.transform=''}if(t.identifier===lid)lid=null}};
+addEventListener('touchend',end);addEventListener('touchcancel',end);
+$('jump').addEventListener('touchstart',e=>{e.stopPropagation();e.preventDefault();jumpReq=true},{passive:false});
+$('jump').addEventListener('mousedown',()=>jumpReq=true);
+addEventListener('keydown',e=>{keys[e.code]=1;if(e.code==='Space')jumpReq=true});addEventListener('keyup',e=>keys[e.code]=0);
+addEventListener('mousemove',e=>{if(e.buttons&&ctrl){yaw-=e.movementX*.004;pitch-=e.movementY*.004;pitch=Math.max(-1.3,Math.min(1.3,pitch))}});
+addEventListener('resize',()=>{renderer.setSize(innerWidth,innerHeight);cam.aspect=innerWidth/innerHeight;cam.updateProjectionMatrix()});
+
+$('go').onclick=()=>{$('title').style.display='none';try{const r=document.documentElement.requestFullscreen();const L=()=>{try{screen.orientation.lock('landscape').catch(()=>{})}catch(e){}};r&&r.then?r.then(L,L):L()}catch(e){}
+ const t=document.querySelector('.top'),b=document.querySelector('.bot');
+ setTimeout(()=>{t.style.transform='translateY(-38%)';b.style.transform='translateY(38%)'},200);
+ setTimeout(()=>{t.style.transform='translateY(-100%)';b.style.transform='translateY(100%)'},1000);
+ started=true};
+
+const sm=k=>k*k*(3-2*k);let camH=.3,acc=0,fpsN=0,last=performance.now();
+function step(dt){
+ let mx=mv.x,my=mv.y;if(keys.KeyW)my-=1;if(keys.KeyS)my+=1;if(keys.KeyA)mx-=1;if(keys.KeyD)mx+=1;
+ let m=Math.hypot(mx,my);if(m>1){mx/=m;my/=m;m=1}
+ const sp=(m>.9?7.5:4.5)*m,sy=Math.sin(yaw),cy=Math.cos(yaw);
+ let nx=px+(cy*mx+sy*my)*sp*dt,nz=pz+(-sy*mx+cy*my)*sp*dt;
+ nx=Math.max(-190,Math.min(190,nx));nz=Math.max(-190,Math.min(190,nz));
+ if(H(nx,nz)<-2.35){nx=px;nz=pz}
+ for(const t of trees){const dx=nx-t[0],dz=nz-t[1],d=Math.hypot(dx,dz);if(d<t[2]+.4){nx=t[0]+dx/d*(t[2]+.4);nz=t[1]+dz/d*(t[2]+.4)}}
+ px=nx;pz=nz;const gr=H(px,pz);
+ if(jumpReq&&py<=gr+.05)vy=7;jumpReq=false;
+ vy-=19*dt;py+=vy*dt;if(py<=gr){py=gr;vy=0}
+ if(m>0&&py<=gr+.05)bobT+=dt*(sp>5?12:9);
+ return m}
+function loop(now){requestAnimationFrame(loop);
+ let dt=Math.min(.05,(now-last)/1000);last=now;const T=now/1000;
+ // adaptive quality
+ acc+=dt;fpsN++;if(acc>2){const f=fpsN/acc;acc=0;fpsN=0;
+  if(f<38&&ratio>.6){ratio-=.15;renderer.setPixelRatio(ratio)}else if(f>57&&ratio<maxRatio){ratio=Math.min(maxRatio,ratio+.1);renderer.setPixelRatio(ratio)}}
+ let m=0;
+ if(started){introT+=dt;
+  if(introT<1.5){camH=.3;pitch=1.1}
+  else if(introT<4.5){const k=sm((introT-1.5)/3);camH=.3+1.35*k;pitch=1.1*(1-k)}
+  else if(!ctrl){ctrl=true;camH=1.65;toast('Mission: find the 5 glowing crystals')}
+  if(ctrl)m=step(dt)}
+ const gr=H(px,pz),bob=Math.sin(bobT)*.05*(m>0?1:0);
+ cam.position.set(px,(ctrl?py:gr)+camH+bob,pz);cam.rotation.set(pitch,yaw,0);
+ crystals.forEach(q=>{if(q.got)return;q.m.rotation.y=T*1.5;q.g.position.y=H(q.x,q.z)+1.4+Math.sin(T*2+q.x)*.25;
+  if(ctrl&&Math.hypot(px-q.x,pz-q.z)<2.4&&Math.abs(py-q.g.position.y)<4){q.got=true;q.g.visible=false;got++;hud();
+   if(got===5){mission=1;bb.material.opacity=.35;orb.material.color.set(0xffd24a);hud();toast('All crystals found! A golden beacon lights up on the hill…',5000)}else toast('Crystal '+got+'/5')}});
+ orb.rotation.y=T;orb.position.y=7.5+Math.sin(T*2)*.3;
+ if(mission===1&&Math.hypot(px-HX,pz-HZ)<6){mission=2;hud();toast('You made it! The way home is open.',6000)}
+ // nav arrow
+ if(ctrl&&mission<2){let tx,tz,bd=1e9;if(mission===0){crystals.forEach(q=>{if(!q.got){const d=Math.hypot(q.x-px,q.z-pz);if(d<bd){bd=d;tx=q.x;tz=q.z}}})}else{tx=HX;tz=HZ;bd=Math.hypot(tx-px,tz-pz)}
+  if(tx!==undefined){const rel=Math.atan2(-(tx-px),-(tz-pz))-yaw;$('arrow').style.transform='rotate('+(-rel*57.3)+'deg)';$('dist').textContent=Math.round(bd)+' m'}}
+ clouds.forEach(cl=>{cl.position.x+=dt*1.5;if(cl.position.x>260)cl.position.x=-260});
+ water.position.y=WATER+Math.sin(T)*.05;
+ renderer.render(scene,cam)}
+requestAnimationFrame(loop);
+})();
+</script></body></html>
